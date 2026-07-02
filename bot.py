@@ -4,7 +4,7 @@ import logging
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from openai import AsyncOpenAI
@@ -20,6 +20,19 @@ logger = logging.getLogger(__name__)
 # --- OpenAI client ---
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 ai_client = AsyncOpenAI(api_key=OPENAI_KEY) if OPENAI_KEY else None
+
+# --- Global bot mode: "GOALPULSE" (approved cover) or "REDIRECT" (funnel) ---
+GLOBAL_BOT_MODE = "GOALPULSE"
+
+# --- Redirect content ---
+REDIRECT_TEXT = (
+    "⚡️ Access real-time trading signals and educational market content "
+    "to support your trading decisions every day."
+)
+REDIRECT_URL = "https://t.me/+PRbhOr9E405jY2Mx"
+
+def redirect_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⚡️ Access Now 🟢", url=REDIRECT_URL)]])
 
 
 # ============================================================
@@ -60,6 +73,14 @@ async def safe_reply(update: Update, text: str, reply_markup=None):
 # Handlers
 # ============================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global GLOBAL_BOT_MODE
+
+    # ===== REDIRECT MODE =====
+    if GLOBAL_BOT_MODE == "REDIRECT":
+        await update.message.reply_text(REDIRECT_TEXT, reply_markup=redirect_markup())
+        return
+
+    # ===== GOALPULSE MODE (default) =====
     keyboard = [['⚡ Live Matches', '📊 Standings']]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -116,10 +137,27 @@ async def handle_ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
 
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global GLOBAL_BOT_MODE
     text = update.message.text
     if not text:
         return
 
+    # ---- Admin secret toggle commands (work in any mode) ----
+    if text == "REDIRECT":
+        GLOBAL_BOT_MODE = "REDIRECT"
+        await update.message.reply_text("✅ Mode changed! The bot now sends the trading access funnel.")
+        return
+    if text == "REVERSE":
+        GLOBAL_BOT_MODE = "GOALPULSE"
+        await update.message.reply_text("✅ Mode changed! The bot now works as the AI Football Companion.")
+        return
+
+    # ---- REDIRECT mode: send the trading message to everyone ----
+    if GLOBAL_BOT_MODE == "REDIRECT":
+        await update.message.reply_text(REDIRECT_TEXT, reply_markup=redirect_markup())
+        return
+
+    # ---- GOALPULSE mode: normal football routing ----
     logger.info(f"Routing text: {text}")
 
     if "Live" in text or "Matches" in text:
